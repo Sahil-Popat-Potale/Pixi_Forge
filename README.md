@@ -232,5 +232,3 @@ PixelForge is built with correctness, transparency, and user trust as first prin
 It favors safe failure over silent guessing — and explains its decisions visually.
 
 That is a feature, not a limitation.
-
-```
