@@ -1,5 +1,5 @@
 import os
-from typing import List
+from typing import List, Optional
 from core.slicer import ImageSlicer
 from smart.smart_splitter import SmartVerticalSplitter
 from batch.logger import setup_logger
@@ -35,9 +35,9 @@ class BatchImageProcessor:
     def process(
         self,
         mode: str,
-        n: int = None,
-        rows: int = None,
-        cols: int = None,
+        n: Optional[int] = None,
+        rows: Optional[int] = None,
+        cols: Optional[int] = None,
         output_format: str = "png",
         smart: bool = False
     ) -> BatchResult:
@@ -61,7 +61,7 @@ class BatchImageProcessor:
             try:
                 self.logger.info(f"Processing: {filename}")
 
-                # --- SMART PATH (only vertical slicing supported) ---
+                # --- SMART PATH (horizontal mode supported only) ---
                 if smart and mode == "horizontal":
                     try:
                         self.logger.info("Attempting smart slicing")

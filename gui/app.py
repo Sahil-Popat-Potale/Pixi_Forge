@@ -2,8 +2,7 @@ import os
 import tkinter as tk
 from tkinter import filedialog, messagebox
 from PIL import Image, ImageTk
-import cv2
-import numpy as np
+from typing import Any, Optional
 
 from batch import BatchImageProcessor
 from core import ImageSlicer
@@ -12,7 +11,7 @@ PREVIEW_SIZE = (420, 260)
 
 
 class PixelForgeGUI:
-    def __init__(self, root):
+    def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title("PixelForge — Intelligent Image Slicer")
         self.root.geometry("750x620")
@@ -28,16 +27,16 @@ class PixelForgeGUI:
         self.smart = tk.BooleanVar()
         self.status = tk.StringVar(value="Select an input folder")
 
-        self.original_image = None
-        self.preview_image = None
-        self.image_path = None
+        self.original_image: Optional[Image.Image] = None
+        self.preview_image: Optional[ImageTk.PhotoImage] = None
+        self.image_path: Optional[str] = None
 
         self._build_ui()
         self._bind_reactivity()
 
     # ---------------- UI ----------------
 
-    def _build_ui(self):
+    def _build_ui(self) -> None:
         pad = {"padx": 8, "pady": 4}
 
         # -------- Input / Output --------
@@ -120,15 +119,19 @@ class PixelForgeGUI:
 
     # ---------------- Reactivity ----------------
 
-    def _bind_reactivity(self):
-        for var in (self.mode, self.n, self.rows, self.cols, self.smart):
-            var.trace_add("write", lambda *_: self.on_state_change())
+    def _bind_reactivity(self) -> None:
+        # bind a real callback so type checkers understand it
+        def _trace_callback(*args: Any) -> None:
+            self.on_state_change()
 
-    def on_state_change(self):
+        for var in (self.mode, self.n, self.rows, self.cols, self.smart):
+            var.trace_add("write", _trace_callback)
+
+    def on_state_change(self) -> None:
         self.update_field_states()
         self.update_preview()
 
-    def update_field_states(self):
+    def update_field_states(self) -> None:
         mode = self.mode.get()
 
         self.n_entry.config(state="normal" if mode in ("horizontal", "vertical") else "disabled")
@@ -138,18 +141,18 @@ class PixelForgeGUI:
 
     # ---------------- Preview ----------------
 
-    def select_input(self):
+    def select_input(self) -> None:
         path = filedialog.askdirectory()
         if path:
             self.input_dir.set(path)
             self.load_preview_image()
 
-    def select_output(self):
+    def select_output(self) -> None:
         path = filedialog.askdirectory()
         if path:
             self.output_dir.set(path)
 
-    def load_preview_image(self):
+    def load_preview_image(self) -> None:
         try:
             images = [
                 f for f in os.listdir(self.input_dir.get())
@@ -166,7 +169,7 @@ class PixelForgeGUI:
         except Exception as e:
             messagebox.showerror("Preview Error", str(e))
 
-    def update_preview(self):
+    def update_preview(self) -> None:
         if not self.original_image:
             return
 
@@ -189,8 +192,12 @@ class PixelForgeGUI:
             scale_x = img.width / slicer.width
             scale_y = img.height / slicer.height
 
+            # Smart overlay (horizontal only) - draw first so deterministic lines sit on top
+            if self.smart.get() and self.mode.get() == "horizontal" and self.n.get():
+                self.draw_smart_overlay(img, scale_x)
+
             if self.mode.get() == "horizontal" and self.n.get():
-                widths = slicer._compute_segments(slicer.width, int(self.n.get()))
+                widths = slicer.compute_segments(slicer.width, int(self.n.get()))
                 x = 0
                 for w in widths[:-1]:
                     x += w
@@ -200,7 +207,7 @@ class PixelForgeGUI:
                     )
 
             elif self.mode.get() == "vertical" and self.n.get():
-                heights = slicer._compute_segments(slicer.height, int(self.n.get()))
+                heights = slicer.compute_segments(slicer.height, int(self.n.get()))
                 y = 0
                 for h in heights[:-1]:
                     y += h
@@ -210,8 +217,8 @@ class PixelForgeGUI:
                     )
 
             elif self.mode.get() == "grid" and self.rows.get() and self.cols.get():
-                widths = slicer._compute_segments(slicer.width, int(self.cols.get()))
-                heights = slicer._compute_segments(slicer.height, int(self.rows.get()))
+                widths = slicer.compute_segments(slicer.width, int(self.cols.get()))
+                heights = slicer.compute_segments(slicer.height, int(self.rows.get()))
 
                 x = 0
                 for w in widths[:-1]:
@@ -234,9 +241,104 @@ class PixelForgeGUI:
         except Exception:
             self.status.set("Invalid parameters")
 
+    def draw_smart_overlay(self, preview_img: Image.Image, scale_x: float) -> None:
+        """
+        Draws an adaptive smart slicing heatmap + candidate markers.
+        Uses local imports for OpenCV and numpy to avoid top-level unused-import warnings.
+        The drawing samples image columns into canvas columns for efficiency.
+        """
+        try:
+            import cv2  # local import
+            import numpy as np  # local import
+        except Exception:
+            # OpenCV / numpy not available; skip overlay silently
+            return
+
+        if not self.image_path:
+            return
+
+        cv_img = cv2.imread(self.image_path)
+        if cv_img is None:
+            return
+
+        gray = cv2.cvtColor(cv_img, cv2.COLOR_BGR2GRAY)
+        edges = cv2.Canny(gray, 50, 150)
+
+        # Column-wise edge energy
+        energy = np.sum(edges, axis=0).astype(float)
+        if energy.size == 0:
+            return
+        energy /= energy.max() + 1e-6
+
+        width = self.original_image.width
+        preview_w = preview_img.width
+
+        # Adaptive thresholds (percentiles)
+        low_t = float(np.percentile(energy, 20))
+        mid_t = float(np.percentile(energy, 50))
+        high_t = float(np.percentile(energy, 80))
+
+        # To avoid drawing one line per pixel (slow), sample columns to preview width
+        # compute group size (cols_per_pixel)
+        cols_per_pixel = max(1, width // preview_w)
+
+        for i in range(preview_w):
+            start = i * cols_per_pixel
+            end = min(width, (i + 1) * cols_per_pixel)
+            block = energy[start:end]
+            if block.size == 0:
+                continue
+            e = float(np.mean(block))
+
+            if e <= low_t:
+                color = "#3b82f6"   # blue
+            elif e <= mid_t:
+                color = "#22c55e"   # green
+            elif e <= high_t:
+                color = "#eab308"   # yellow
+            else:
+                color = "#ef4444"   # red
+
+            x1 = i
+            x2 = i + 1
+            # Draw thin vertical rectangle representing this sample column
+            self.preview_canvas.create_rectangle(
+                x1, 0, x2, preview_img.height,
+                fill=color, outline=color
+            )
+
+        # Candidate split markers (best-effort)
+        try:
+            n = int(self.n.get())
+            if n <= 1:
+                return
+
+            min_gap = width // n
+            sorted_indices = np.argsort(energy)
+
+            candidates = []
+            for idx in sorted_indices:
+                if idx < min_gap or idx > width - min_gap:
+                    continue
+                if all(abs(int(idx) - int(c)) >= min_gap for c in candidates):
+                    candidates.append(int(idx))
+                if len(candidates) == n - 1:
+                    break
+
+            # draw candidate markers (thick green) scaled to preview
+            for x in candidates:
+                px = int((x / width) * preview_w)
+                self.preview_canvas.create_line(
+                    px, 0, px, preview_img.height,
+                    fill="#16a34a", width=3
+                )
+        except Exception:
+            # silent best-effort candidate selection
+            pass
+
     # ---------------- Batch ----------------
 
-    def run_processing(self):
+    def run_processing(self) -> None:
         try:
             self.status.set("Running batch...")
             self.root.update_idletasks()
@@ -266,7 +368,7 @@ class PixelForgeGUI:
             messagebox.showerror("Error", str(e))
 
 
-def launch():
+def launch() -> None:
     root = tk.Tk()
     PixelForgeGUI(root)
     root.mainloop()

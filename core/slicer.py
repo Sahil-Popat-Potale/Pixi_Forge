@@ -1,7 +1,6 @@
 from PIL import Image
 from typing import List, Tuple, Literal
 
-
 SliceMode = Literal["horizontal", "vertical", "grid"]
 
 
@@ -44,6 +43,10 @@ class ImageSlicer:
             base + 1 if i < remainder else base
             for i in range(n)
         ]
+
+    # Public wrapper so other modules (GUI) don't use protected API
+    def compute_segments(self, total_pixels: int, n: int) -> List[int]:
+        return self._compute_segments(total_pixels, n)
 
     def slice(self, mode: SliceMode, n: int = None, rows: int = None, cols: int = None) -> List[ImageSlice]:
         """
