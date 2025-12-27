@@ -5,8 +5,8 @@ from batch.processor import BatchImageProcessor
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="pixelforge",
-        description="PixelForge — Intelligent Image Slicing Tool"
+        prog="pixiforge",
+        description="PixiForge — Intelligent Image Slicing Tool"
     )
 
     parser.add_argument(
