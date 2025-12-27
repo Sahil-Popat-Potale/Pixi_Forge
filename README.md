@@ -1,6 +1,6 @@
-# PixelForge — Intelligent Image Slicing Tool
+# Pixi Forge — Intelligent Image Slicing Tool
 
-PixelForge is a professional-grade image slicing system that combines
+Pixi Forge is a professional-grade image slicing system that combines
 pixel-perfect deterministic slicing with optional OpenCV-based intelligent slicing.
 It supports batch processing, command-line automation, and a real-time,
 explainable GUI that visually shows how and why images are split.
@@ -25,7 +25,7 @@ The project is designed to be safe, modular, and transparent rather than “magi
 
 ```
 
-pixel_forge/
+pixi_forge/
 │
 ├── core/        # Core slicing engine (deterministic, pixel-perfect)
 ├── smart/       # OpenCV-based intelligent slicing
@@ -33,7 +33,7 @@ pixel_forge/
 ├── cli/         # Command-line interface
 ├── gui/         # Tkinter GUI application
 │
-├── pixelforge.py        # CLI entry point
+├── pixiforge.py         # CLI entry point
 ├── input_images/        # Images to process (user provided)
 ├── output_images/       # Generated output images
 ├── logs/                # Runtime logs
@@ -66,7 +66,7 @@ Tkinter comes pre-installed with standard Python distributions.
 
 ## 🚀 How to Use
 
-PixelForge can be used in **three ways**:
+Pixi Forge can be used in **three ways**:
 
 ---
 
@@ -103,19 +103,19 @@ python -c "from gui.app import launch; launch()"
 Basic usage:
 
 ```bash
-python pixelforge.py input_images output_images --mode horizontal --n 5
+python pixiforge.py input_images output_images --mode horizontal --n 5
 ```
 
 Grid slicing:
 
 ```bash
-python pixelforge.py input_images output_images --mode grid --rows 3 --cols 4
+python pixiforge.py input_images output_images --mode grid --rows 3 --cols 4
 ```
 
 Smart slicing with fallback:
 
 ```bash
-python pixelforge.py input_images output_images --mode horizontal --n 5 --smart --logs logs
+python pixiforge.py input_images output_images --mode horizontal --n 5 --smart --logs logs
 ```
 
 **Exit codes:**
@@ -216,19 +216,9 @@ These validate:
 
 ---
 
-## 📌 Future Enhancements (Optional)
-
-* Save/load GUI presets
-* Package as Windows `.exe`
-* Advanced smart slicing (grid-aware)
-* Unit tests (pytest)
-* Documentation screenshots
-
----
-
 ## 🙌 Final Note
 
-PixelForge is built with correctness, transparency, and user trust as first principles.
+Pixi Forge is built with correctness, transparency, and user trust as first principles.
 It favors safe failure over silent guessing — and explains its decisions visually.
 
 That is a feature, not a limitation.
