@@ -10,10 +10,10 @@ from core import ImageSlicer
 PREVIEW_SIZE = (420, 260)
 
 
-class PixelForgeGUI:
+class PixiForgeGUI:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
-        self.root.title("PixelForge — Intelligent Image Slicer")
+        self.root.title("PixiForge — Intelligent Image Slicer")
         self.root.geometry("750x620")
         self.root.minsize(720, 600)
 
@@ -370,5 +370,5 @@ class PixelForgeGUI:
 
 def launch() -> None:
     root = tk.Tk()
-    PixelForgeGUI(root)
+    PixiForgeGUI(root)
     root.mainloop()

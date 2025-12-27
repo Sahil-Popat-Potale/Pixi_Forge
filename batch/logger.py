@@ -3,7 +3,7 @@ import os
 from datetime import datetime
 
 def setup_logger(log_dir: str = None) -> logging.Logger:
-    logger = logging.getLogger("PixelForgeBatch")
+    logger = logging.getLogger("PixiForgeBatch")
     logger.setLevel(logging.INFO)
 
     if logger.handlers:
