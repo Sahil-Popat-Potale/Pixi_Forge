@@ -6,6 +6,29 @@
 *.svg
 *.ico
 
+#videos
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.flv
+*.wmv
+*.webm
+*.mpeg
+*.mpg
+*.3gp
+*.m4v
+*.ts
+*.vob
+*.rmvb
+*.f4v
+*.ogv
+*.divx
+*.xvid
+*.h264
+*.m2ts
+*.mts
+
 # Logs
 logs
 *.log
