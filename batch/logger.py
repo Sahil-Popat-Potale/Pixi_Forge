@@ -2,7 +2,7 @@ import logging
 import os
 from datetime import datetime
 
-def setup_logger(log_dir: str = None) -> logging.Logger:
+def setup_logger(log_dir: str = None) -> logging.Logger: #type: ignore
     logger = logging.getLogger("PixiForgeBatch")
     logger.setLevel(logging.INFO)
 

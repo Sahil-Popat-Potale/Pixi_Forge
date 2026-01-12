@@ -2,7 +2,7 @@ from batch import BatchImageProcessor
 
 processor = BatchImageProcessor(
     input_dir="input_images",
-    output_dir="output_images",
+    output_dir="outputs",
     log_dir="logs"
 )
 

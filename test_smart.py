@@ -11,6 +11,6 @@ print("Smart slices created:", len(images))
 
 for i, img in enumerate(images, start=1):
     print(f"Part {i} -> size: {img.size}")
-    img.save(f"output_images/smart_part_{i}.png")
+    img.save(f"outputs/smart_part_{i}.png") #type: ignore
 
-print("Saved smart sliced images to output_images/")
+print("Saved smart sliced images to outputs/")
