@@ -1,6 +1,10 @@
 import os
+import threading
+import subprocess
+import shutil
+import time
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, simpledialog
 from PIL import Image, ImageTk
 from typing import Any, Optional
 
@@ -10,12 +14,12 @@ from core import ImageSlicer
 PREVIEW_SIZE = (420, 260)
 
 
-class PixiForgeGUI:
+class PixelForgeGUI:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
-        self.root.title("PixiForge — Intelligent Image Slicer")
-        self.root.geometry("750x620")
-        self.root.minsize(720, 600)
+        self.root.title("Pixi Forge — Intelligent Image Slicer")
+        self.root.geometry("820x680")
+        self.root.minsize(760, 620)
 
         # -------- State --------
         self.input_dir = tk.StringVar()
@@ -31,6 +35,12 @@ class PixiForgeGUI:
         self.preview_image: Optional[ImageTk.PhotoImage] = None
         self.image_path: Optional[str] = None
 
+        # Extraction worker state
+        self._extract_thread: Optional[threading.Thread] = None
+        self._extract_cancel = threading.Event()
+        self._extract_process: Optional[subprocess.Popen] = None
+        self._extract_count_var = tk.StringVar(value="Frames: 0")
+
         self._build_ui()
         self._bind_reactivity()
 
@@ -44,11 +54,11 @@ class PixiForgeGUI:
         io_frame.pack(fill="x")
 
         tk.Label(io_frame, text="Input Folder").pack(**pad)
-        tk.Entry(io_frame, textvariable=self.input_dir, width=70).pack()
+        tk.Entry(io_frame, textvariable=self.input_dir, width=80).pack()
         tk.Button(io_frame, text="Browse", command=self.select_input).pack(**pad)
 
         tk.Label(io_frame, text="Output Folder").pack(**pad)
-        tk.Entry(io_frame, textvariable=self.output_dir, width=70).pack()
+        tk.Entry(io_frame, textvariable=self.output_dir, width=80).pack()
         tk.Button(io_frame, text="Browse", command=self.select_output).pack(**pad)
 
         # -------- Preview --------
@@ -96,15 +106,41 @@ class PixiForgeGUI:
         )
         self.smart_check.grid(row=3, column=0, columnspan=3, sticky="w")
 
-        # -------- Run --------
+        # -------- Run / Tools --------
+        buttons_frame = tk.Frame(self.root)
+        buttons_frame.pack(pady=12)
+
         tk.Button(
-            self.root,
+            buttons_frame,
             text="Run Batch Processing",
             bg="#2ecc71",
             fg="white",
             font=("Segoe UI", 11, "bold"),
-            command=self.run_processing
-        ).pack(pady=12)
+            command=self.run_processing,
+            width=22
+        ).grid(row=0, column=0, padx=6, pady=4)
+
+        # Video extractor controls
+        tk.Button(
+            buttons_frame,
+            text="Extract Frames (Video → Images)",
+            bg="#3b82f6",
+            fg="white",
+            font=("Segoe UI", 10, "bold"),
+            command=self.ask_and_extract,
+            width=26
+        ).grid(row=0, column=1, padx=6, pady=4)
+
+        tk.Button(
+            buttons_frame,
+            text="Cancel Extraction",
+            bg="#ef4444",
+            fg="white",
+            command=self.cancel_extraction,
+            width=14
+        ).grid(row=0, column=2, padx=6, pady=4)
+
+        tk.Label(buttons_frame, textvariable=self._extract_count_var).grid(row=0, column=3, padx=8)
 
         # -------- Status --------
         status_bar = tk.Label(
@@ -155,7 +191,7 @@ class PixiForgeGUI:
     def load_preview_image(self) -> None:
         try:
             images = [
-                f for f in os.listdir(self.input_dir.get())
+                f for f in os.listdir(self.input_dir.get() or ".")
                 if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".tiff"))
             ]
             if not images:
@@ -279,7 +315,6 @@ class PixiForgeGUI:
         high_t = float(np.percentile(energy, 80))
 
         # To avoid drawing one line per pixel (slow), sample columns to preview width
-        # compute group size (cols_per_pixel)
         cols_per_pixel = max(1, width // preview_w)
 
         for i in range(preview_w):
@@ -336,6 +371,198 @@ class PixiForgeGUI:
             # silent best-effort candidate selection
             pass
 
+    # ---------------- Video extraction (GUI) ----------------
+
+    @staticmethod
+    def _ffmpeg_available() -> bool:
+        return shutil.which("ffmpeg") is not None
+
+    def ask_and_extract(self) -> None:
+        """
+        UI flow for selecting a video and starting extraction.
+        Runs extraction in a background thread; provides cancel support.
+        """
+        video_file = filedialog.askopenfilename(
+            filetypes=[("Video files", "*.mp4 *.mov *.mkv *.avi *.webm *.mpg"), ("All files", "*.*")]
+        )
+        if not video_file:
+            return
+
+        outdir = filedialog.askdirectory(title="Select output folder for frames")
+        if not outdir:
+            return
+
+        fmt = simpledialog.askstring("Format", "Image format (png/jpg/tiff)", initialvalue="png")
+        if not fmt:
+            fmt = "png"
+
+        # choose backend automatically (prefers ffmpeg)
+        backend = "ffmpeg" if self._ffmpeg_available() else "opencv"
+
+        # reset cancel flag and count
+        self._extract_cancel.clear()
+        self._extract_count_var.set("Frames: 0")
+        self.status.set("Starting frame extraction...")
+        self._extract_thread = threading.Thread(
+            target=self._extract_worker,
+            args=(video_file, outdir, fmt.lower(), backend),
+            daemon=True
+        )
+        self._extract_thread.start()
+
+    def cancel_extraction(self) -> None:
+        """
+        Request extraction cancellation; this will kill ffmpeg subprocess or stop OpenCV loop.
+        """
+        if self._extract_thread and self._extract_thread.is_alive():
+            self._extract_cancel.set()
+            # kill ffmpeg if running
+            if self._extract_process:
+                try:
+                    self._extract_process.kill()
+                except Exception:
+                    pass
+            self.status.set("Extraction cancellation requested")
+        else:
+            self.status.set("No active extraction to cancel")
+
+    def _extract_worker(self, video_path: str, outdir: str, fmt: str, backend: str) -> None:
+        """
+        Worker that runs in a background thread. For ffmpeg we spawn a subprocess and
+        monitor the output directory to show extracted frame count. For OpenCV we perform
+        frame-by-frame extraction and update the counter each frame. Support cancellation.
+        """
+        try:
+            os.makedirs(outdir, exist_ok=True)
+            prefix = "frame"
+
+            # Remove previous frames from outdir that match the pattern? We leave them to avoid data loss.
+            # Instead, we count only matching files created during this run by tracking initial set.
+            initial_files = set(f for f in os.listdir(outdir) if f.lower().endswith("." + fmt.lower()) and f.startswith(prefix + "_"))
+
+            if backend == "ffmpeg" and self._ffmpeg_available():
+                # Run ffmpeg with progress to stdout and monitor created files
+                out_pattern = os.path.join(outdir, f"{prefix}_%06d.{fmt}")
+                cmd = ["ffmpeg", "-hide_banner", "-progress", "-", "-i", video_path, "-vsync", "0", "-y", out_pattern]
+
+                # spawn
+                self._extract_process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    universal_newlines=True
+                )
+
+                # While ffmpeg runs, poll the output directory for new frames and handle cancel
+                last_count = 0
+                while True:
+                    if self._extract_cancel.is_set():
+                        # kill process and exit
+                        try:
+                            if self._extract_process:
+                                self._extract_process.kill()
+                        except Exception:
+                            pass
+                        break
+
+                    # non-blocking check if process has ended
+                    retcode = self._extract_process.poll()
+                    # count new files
+                    cur_files = [f for f in os.listdir(outdir) if f.startswith(prefix + "_") and f.lower().endswith("." + fmt.lower())]
+                    cur_count = len([f for f in cur_files if f not in initial_files])
+                    if cur_count != last_count:
+                        last_count = cur_count
+                        # schedule UI update on main thread
+                        self.root.after(0, lambda c=cur_count: self._extract_count_var.set(f"Frames: {c}"))
+
+                    if retcode is not None:
+                        # process finished
+                        break
+
+                    # small sleep to avoid busy loop
+                    time.sleep(0.2)
+
+                # after exit, read returncode and stderr for errors
+                if self._extract_cancel.is_set():
+                    self.root.after(0, lambda: self.status.set("Extraction canceled"))
+                    self._extract_process = None
+                    return
+
+                ret = self._extract_process.wait()
+                stderr = self._extract_process.stderr.read() if self._extract_process.stderr else ""
+                self._extract_process = None
+
+                if ret != 0:
+                    # ffmpeg failed; surface error
+                    self.root.after(0, lambda: self.status.set("Extraction failed"))
+                    self.root.after(0, lambda: messagebox.showerror("Extraction error", f"ffmpeg failed:\n{stderr}"))
+                    return
+
+                # final count
+                final_files = [f for f in os.listdir(outdir) if f.startswith(prefix + "_") and f.lower().endswith("." + fmt.lower())]
+                final_count = len([f for f in final_files if f not in initial_files])
+                self.root.after(0, lambda: self._extract_count_var.set(f"Frames: {final_count}"))
+                self.root.after(0, lambda: self.status.set(f"Extracted {final_count} frames (ffmpeg)"))
+                return
+
+            # Fallback: OpenCV extraction implemented inline so we can report progress and cancel
+            try:
+                import cv2
+            except Exception as e:
+                self.root.after(0, lambda: messagebox.showerror("Extraction error", "OpenCV not installed and ffmpeg not available."))
+                self.root.after(0, lambda: self.status.set("Extraction failed"))
+                return
+
+            cap = cv2.VideoCapture(video_path)
+            if not cap.isOpened():
+                self.root.after(0, lambda: messagebox.showerror("Extraction error", f"Failed to open video: {video_path}"))
+                self.root.after(0, lambda: self.status.set("Extraction failed"))
+                return
+
+            idx = 0
+            written = 0
+            while True:
+                if self._extract_cancel.is_set():
+                    break
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                idx += 1
+                out_name = f"{prefix}_{idx:06d}.{fmt}"
+                out_path = os.path.join(outdir, out_name)
+
+                # write with best available params
+                if fmt.lower() in ("jpg", "jpeg"):
+                    ok = cv2.imwrite(out_path, frame, [int(cv2.IMWRITE_JPEG_QUALITY), 100])
+                elif fmt.lower() == "png":
+                    ok = cv2.imwrite(out_path, frame, [int(cv2.IMWRITE_PNG_COMPRESSION), 0])
+                else:
+                    ok = cv2.imwrite(out_path, frame)
+
+                if not ok:
+                    cap.release()
+                    self.root.after(0, lambda: messagebox.showerror("Extraction error", f"Failed to write frame {out_path}"))
+                    self.root.after(0, lambda: self.status.set("Extraction failed"))
+                    return
+
+                written += 1
+                # update UI
+                if written % 1 == 0:
+                    self.root.after(0, lambda c=written: self._extract_count_var.set(f"Frames: {c}"))
+                # small sleep to be cooperative
+                time.sleep(0.001)
+
+            cap.release()
+            if self._extract_cancel.is_set():
+                self.root.after(0, lambda: self.status.set("Extraction canceled"))
+            else:
+                self.root.after(0, lambda: self.status.set(f"Extracted {written} frames (opencv)"))
+            self.root.after(0, lambda w=written: self._extract_count_var.set(f"Frames: {w}"))
+
+        except Exception as exc:
+            self.root.after(0, lambda: messagebox.showerror("Extraction error", str(exc)))
+            self.root.after(0, lambda: self.status.set("Extraction failed"))
+
     # ---------------- Batch ----------------
 
     def run_processing(self) -> None:
@@ -370,5 +597,5 @@ class PixiForgeGUI:
 
 def launch() -> None:
     root = tk.Tk()
-    PixiForgeGUI(root)
+    PixelForgeGUI(root)
     root.mainloop()

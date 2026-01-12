@@ -5,7 +5,7 @@ pixel-perfect deterministic slicing with optional OpenCV-based intelligent slici
 It supports batch processing, command-line automation, and a real-time,
 explainable GUI that visually shows how and why images are split.
 
-The project is designed to be safe, modular, and transparent rather than “magic”.
+Pixi Forge is designed to be safe, modular, and transparent rather than “magic”.
 
 ---
 
@@ -17,6 +17,7 @@ The project is designed to be safe, modular, and transparent rather than “magi
 - Command-line interface (CLI) for automation
 - Responsive Tkinter GUI with live preview
 - Explainable smart slicing via heatmap visualization
+- Video → Frames extraction (lossless PNG via `ffmpeg`, OpenCV fallback)
 - No silent failures, no destructive operations
 
 ---
@@ -25,22 +26,24 @@ The project is designed to be safe, modular, and transparent rather than “magi
 
 ```
 
-pixi_forge/
+Pixi_Forge/
 │
 ├── core/        # Core slicing engine (deterministic, pixel-perfect)
 ├── smart/       # OpenCV-based intelligent slicing
 ├── batch/       # Batch automation + logging
 ├── cli/         # Command-line interface
 ├── gui/         # Tkinter GUI application
+├── tools/       # Utility tools (video frame extractor, etc.)
 │
-├── pixiforge.py         # CLI entry point
-├── input_images/        # Images to process (user provided)
-├── output_images/       # Generated output images
-├── logs/                # Runtime logs
+├── run_gui.py        # GUI entry point (recommended)
+├── pixelforge.py     # CLI entry point
+├── input_images/     # Images to process (user provided)
+├── output_images/    # Generated output images
+├── logs/             # Runtime logs
 │
-├── test_core.py         # Manual core tests
-├── test_smart.py        # Manual smart slicing tests
-├── test_batch.py        # Manual batch tests
+├── test_core.py      # Manual core tests
+├── test_smart.py     # Manual smart slicing tests
+├── test_batch.py     # Manual batch tests
 └── README.md
 
 ````
@@ -49,24 +52,46 @@ pixi_forge/
 
 ## 🛠️ Installation
 
-### 1. Requirements
+### Requirements
 
 - Python **3.10 or higher**
 - OS: Windows / Linux / macOS (GUI tested primarily on Windows)
+- Optional (recommended): `ffmpeg` binary in your PATH for best video frame extraction
 
-### 2. Install dependencies
+### Install Python dependencies
+
+From project root:
+
+```bash
+pip install -r requirements.txt
+````
+
+If you don't have `requirements.txt`, install the core packages:
 
 ```bash
 pip install pillow opencv-python numpy
-````
+```
 
-Tkinter comes pre-installed with standard Python distributions.
+Notes:
+
+* Use `opencv-python` (not `-headless`) if you plan to use the GUI or `cv2.imshow` features.
+* `Tkinter` is bundled with most Python distributions (standard on Windows/macOS).
+
+### Install ffmpeg (optional but recommended)
+
+ffmpeg is recommended for video → frames extraction (lossless PNG output and robust codec handling).
+
+* On Windows: download `ffmpeg.exe` and add it to your PATH.
+* On macOS: `brew install ffmpeg`
+* On Linux: use your distro package manager, e.g. `sudo apt install ffmpeg`.
+
+If `ffmpeg` is not present, Pixi Forge falls back to OpenCV for frame extraction (still works but codec handling is less robust).
 
 ---
 
 ## 🚀 How to Use
 
-Pixi Forge can be used in **three ways**:
+Pixi Forge can be used in **three ways**.
 
 ---
 
@@ -75,17 +100,24 @@ Pixi Forge can be used in **three ways**:
 Launch the GUI:
 
 ```bash
+python run_gui.py
+```
+
+Or (alternate):
+
+```bash
 python -c "from gui.app import launch; launch()"
 ```
 
-**GUI capabilities:**
+**GUI capabilities**
 
 * Select input and output folders
 * Choose slicing mode (horizontal / vertical / grid)
 * Enable smart slicing (horizontal only)
-* See real-time preview with slice lines
+* See real-time preview with deterministic slice lines (white)
 * View smart slicing heatmap (blue → green → yellow → red)
 * Run batch processing safely
+* Extract frames from video via the Tools → Video Extractor button (if enabled)
 
 **Legend (Smart Preview):**
 
@@ -93,7 +125,7 @@ python -c "from gui.app import launch; launch()"
 * 🟢 Green: safe
 * 🟡 Yellow: risky
 * 🔴 Red: unsafe (dense content)
-* ⚪ White lines: deterministic slicing
+* ⚪ White lines: deterministic slicing boundaries
 * 🟢 Thick green lines: smart candidate splits
 
 ---
@@ -103,19 +135,19 @@ python -c "from gui.app import launch; launch()"
 Basic usage:
 
 ```bash
-python pixiforge.py input_images output_images --mode horizontal --n 5
+python pixelforge.py input_images output_images --mode horizontal --n 5
 ```
 
 Grid slicing:
 
 ```bash
-python pixiforge.py input_images output_images --mode grid --rows 3 --cols 4
+python pixelforge.py input_images output_images --mode grid --rows 3 --cols 4
 ```
 
 Smart slicing with fallback:
 
 ```bash
-python pixiforge.py input_images output_images --mode horizontal --n 5 --smart --logs logs
+python pixelforge.py input_images output_images --mode horizontal --n 5 --smart --logs logs
 ```
 
 **Exit codes:**
@@ -129,7 +161,7 @@ python pixiforge.py input_images output_images --mode horizontal --n 5 --smart -
 ### 3️⃣ Batch Processing (Python API)
 
 ```python
-from batch import BatchImageProcessor
+from batch.processor import BatchImageProcessor
 
 processor = BatchImageProcessor(
     input_dir="input_images",
@@ -149,47 +181,139 @@ print(result.failed)
 
 ---
 
+## 🎞️ Video → Frames (new feature)
+
+Pixi Forge can extract every frame from a video to an image sequence (lossless PNG recommended).
+
+Tools:
+
+* `tools/video_extractor.py` — exposes `extract_frames(...)`
+* CLI helper: `python -m tools.extract_frames_cli <video> <outdir> [--fmt png] [--backend auto]`
+
+Example (automatic backend detection):
+
+```bash
+python -m tools.extract_frames_cli sample.mp4 frames_out --fmt png --backend auto
+```
+
+Example (explicit backend):
+
+```bash
+python -m tools.extract_frames_cli sample.mp4 frames_out --fmt png --backend ffmpeg
+```
+
+Python API:
+
+```python
+from tools.video_extractor import extract_frames
+
+backend_used, frames_written = extract_frames("sample.mp4", "frames_out", fmt="png", backend="ffmpeg")
+print(backend_used, frames_written)
+```
+
+Notes:
+
+* `ffmpeg` backend is recommended for fidelity and codec support. It writes `frame_000001.png`, etc.
+* `opencv` backend is used as a fallback if `ffmpeg` is unavailable.
+* Warning: extracting all frames from long/high-FPS videos consumes disk space. Consider extracting ranges or sample rates.
+
+---
+
 ## 🧠 How Smart Slicing Works (Important)
 
 Smart slicing:
 
-* Uses OpenCV edge detection
-* Analyzes vertical edge energy
-* Finds low-content (quiet) columns
-* Refuses to slice if no safe cuts exist
+* Uses OpenCV edge detection (Canny)
+* Computes column-wise edge energy
+* Finds low-content (quiet) vertical columns suitable for safe splits
+* Picks candidate split positions and refuses to split if candidates are ambiguous
 
 If smart slicing fails:
 ➡️ The system **automatically falls back** to deterministic slicing.
 
-This behavior is intentional and ensures:
+This ensures:
 
-* No random guesses
-* No broken images
-* No crashes
+* No guessing
+* No corrupted outputs
+* Predictable behavior
 
 ---
 
 ## ⚠️ Known Limitations (By Design)
 
-* Smart slicing works best on:
+Smart slicing works best on:
 
-  * banners
-  * slides
-  * images with clear vertical gaps
-* Smart slicing will usually fail on:
+* banners, slides, promotional images
+* images with clear vertical gaps
 
-  * portraits
-  * anime art
-  * collages
-  * dense photographs
+Smart slicing will usually fail on:
 
-This is expected and visible via the GUI heatmap.
+* portraits and close-ups
+* anime art and dense illustrations
+* collages and busy photographs
+
+When smart slicing fails, the GUI heatmap will show high energy (red/yellow) and smart mode will fall back to deterministic slicing.
+
+---
+
+## 📸 Screenshots
+
+Add these images to `/screenshots` (project root) and they will render on GitHub.
+
+```
+screenshots/
+├── 01_main_gui.png
+├── 02_deterministic_preview.png
+├── 03_smart_heatmap.png
+├── 04_smart_refusal.png
+├── 05_batch_complete.png
+├── 06_video_extract_cli.png
+├── 07_video_extract_gui.png
+```
+
+Suggested README snippet to include (drop into README where appropriate):
+
+```markdown
+## 📸 Screenshots
+
+### 1️⃣ Main GUI — Initial State
+![Main GUI](screenshots/01_main_gui.png)
+
+### 2️⃣ Live Preview — Deterministic Slicing
+![Deterministic Preview](screenshots/02_deterministic_preview.png)
+
+### 3️⃣ Smart Preview — Heatmap Overlay
+![Smart Heatmap Preview](screenshots/03_smart_heatmap.png)
+
+### 4️⃣ Smart Slicing Refusal (Explainable Failure)
+![Smart Refusal](screenshots/04_smart_refusal.png)
+
+### 5️⃣ Batch Processing Completion
+![Batch Complete](screenshots/05_batch_complete.png)
+
+### 6️⃣ Video Extract — CLI Example
+![Video CLI](screenshots/06_video_extract_cli.png)
+
+### 7️⃣ Video Extract — GUI Example
+![Video GUI](screenshots/07_video_extract_gui.png)
+```
+
+How to take clean screenshots:
+
+* Keep window at the default size (no odd scaling)
+* Use one clean sample image or video for each case:
+
+  * Banner/slide for smart success
+  * Portrait for smart refusal
+  * Folder with multiple images for batch
+  * Short sample video for frame extraction
+* Crop tightly to the application window; avoid desktop clutter
 
 ---
 
 ## 🧪 Testing
 
-Manual test scripts are provided:
+Manual test scripts:
 
 ```bash
 python test_core.py
@@ -197,28 +321,62 @@ python test_smart.py
 python test_batch.py
 ```
 
-These validate:
+Video frame extraction test:
 
-* slicing math
-* smart slicing behavior
-* batch fallback safety
+```bash
+python -m tools.extract_frames_cli sample.mp4 frames_out --fmt png --backend auto
+```
+
+Sanity-check GUI:
+
+1. Launch GUI: `python run_gui.py`
+2. Select an `input_images` folder
+3. Switch modes, play with `n`, `rows`, `cols`
+4. Enable Smart (horizontal) and observe heatmap + candidate lines
+5. Run Batch Processing; check `/output_images` and `/logs`
 
 ---
 
 ## 🔒 Safety & Reliability Notes
 
-* Input images are never modified
-* All outputs go to a separate directory
-* Errors are logged, not hidden
-* No external network calls
-* No shell execution
+* Input images/videos are never modified in place
+* All outputs go to separate directories
+* Errors are logged and surfaced to the user
+* No external network calls by default
+* No shell execution besides optional `ffmpeg` subprocess (explicit and controlled)
 * No dynamic code execution
 
 ---
 
-## 🙌 Final Note
+## 📝 Contributing
 
-Pixi Forge is built with correctness, transparency, and user trust as first principles.
-It favors safe failure over silent guessing — and explains its decisions visually.
+* Open issues for bugs or feature requests
+* Send PRs to `main` with tests or screenshots
+* Follow code style (type hints preferred, docstrings for public APIs)
 
-That is a feature, not a limitation.
+---
+
+## ⚙ Troubleshooting (common problems)
+
+**`ModuleNotFoundError: No module named 'tools'`**
+
+* Run from project root or run as module:
+
+  ```bash
+  python -m tools.extract_frames_cli ...
+  ```
+* Ensure `tools/__init__.py` exists.
+
+**`ffmpeg not found`**
+
+* Install ffmpeg or pass `--backend opencv` (requires `opencv-python`).
+
+**Pylance / linter warnings in VS Code**
+
+* Many GUI/Tkinter warnings are type-stub artifacts. The code runs correctly; apply per-line `# type: ignore` only where necessary.
+
+---
+
+## Final thoughts
+
+Pixi Forge favors **clarity, correctness, and explainability**. When intelligence chooses not to act (smart slicing refuses), that decision is shown visually. That transparency is intentional — it builds trust.
